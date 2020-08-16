@@ -1,5 +1,7 @@
-(def )
-(def iris (map #(dissoc (assoc %1 :Classes (:Species %1)) :Species) (nth (nth (vec (incanter.datasets/get-dataset :iris)) 1) 1)))
+(ns decision-tree.core
+  (:require [incanter.datasets])
+  (:require [clojure.spec.alpha :as s]))
+
 (def test-data (random-sample 0.3 iris))
 (def train-data (filter #(not (.contains test-data %1)) iris))
 (def root {:feature nil :threshold nil :data train-data :right nil :left nil}) ; thresholdは以上ならleftに以下ならrightに進む．
