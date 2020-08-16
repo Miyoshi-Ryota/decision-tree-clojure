@@ -27,9 +27,23 @@
 (def train-data (filter #(not (.contains test-data %1)) iris))
 (def root {:feature nil :threshold nil :data train-data :right nil :left nil}) ; thresholdは以上ならleftに以下ならrightに進む．
 
-(defn gini-impurity [y]
-  (let [number-of-each-data (map #(count (val %)) (group-by identity y))]
-    (- 1 (apply + (map #(Math/pow %1 2) (map #(/ % (apply + number-of-each-data)) number-of-each-data))))))
+(s/def ::objective-variable string?)
+(s/def ::objective-variable-vector (s/coll-of ::objective-variable))
+
+(defn- gini-impurity
+  "`y` is objective variable vector."
+  [y]
+  {:pre [(s/valid? ::objective-variable-vector y)]
+   :post [(s/valid? (s/and number? #(<= 0 % 1)) %)]}
+  (let [number-of-each-data (->> (group-by identity y)
+                                 (map (comp count val)))
+        sum-of-number-of-data (apply + number-of-each-data)]
+    (->> number-of-each-data
+         (map #(/ % sum-of-number-of-data))
+         (map #(Math/pow % 2))
+         (apply +)
+         (- 1))))
+
 
 (defmacro debug
   "Prints args. This is useful when debugging."
