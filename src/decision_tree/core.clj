@@ -2,6 +2,27 @@
   (:require [incanter.datasets])
   (:require [clojure.spec.alpha :as s]))
 
+
+(defn- update-key
+  "Change `from-key` in `map` to `to-key`.
+  Example:
+    (def sample-map {:Sepal.Length 5.1, :Sepal.Width 3.5, :Petal.Length 1.4, :Petal.Width 0.2, :Species \"setosa\"})
+    (update-key :Species :Classes sample-map)
+    ;;=> {:Sepal.Length 5.1, :Sepal.Width 3.5, :Petal.Length 1.4, :Petal.Width 0.2, :Classes \"setosa\"}"
+  [from-key to-key map]
+  {:pre [(s/valid? keyword? from-key)
+         (s/valid? keyword? to-key)
+         (s/valid? map? map)]
+   :post [(s/valid? map? %)]}
+  (-> map
+      (assoc to-key (from-key map))
+      (dissoc from-key)))
+
+(def iris  (->> (incanter.datasets/get-dataset :iris)
+                :rows
+                (map (partial update-key :Species :Classes))))
+
+
 (def test-data (random-sample 0.3 iris))
 (def train-data (filter #(not (.contains test-data %1)) iris))
 (def root {:feature nil :threshold nil :data train-data :right nil :left nil}) ; thresholdは以上ならleftに以下ならrightに進む．
