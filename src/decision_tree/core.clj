@@ -18,6 +18,18 @@
       (assoc to-key (from-key map))
       (dissoc from-key)))
 
+(defn- update-value
+  "Update value related to `key` in `map`.
+  Example:
+    (update-value :test 10 {:test nil :aiueo 5})
+    ;;=> {:test 10 :aiueo 5}
+  "
+  [map key updated-value]
+  {:pre [(s/valid? map? map)
+         (s/valid? keyword? key)]
+   :post [(s/valid? map? %)]}
+  (update map key (fn [_] (identity updated-value))))
+
 (def iris  (->> (incanter.datasets/get-dataset :iris)
                 :rows
                 (map (partial update-key :Species :Classes))))
@@ -70,6 +82,7 @@
        (+ (* (/ leaf1-number-of-data node-number-of-data) leaf1-gini-impurity)
           (* (/ leaf2-number-of-data node-number-of-data) leaf2-gini-impurity)))))
 
+"
 (defn split-node [node max-depth]
   (if (or (= max-depth 0)
           (= (count (set (map :Classes (:data node)))) 1))
@@ -88,6 +101,113 @@
       (if (= (:information-gain max-information-gain-splitter) 0.0) ;全部の特徴量が等しくなって分けれない時があるので，それの対応．上で全部の特徴量がイコールというのでバリデーションしても良いかも
         (assoc node :predict (ffirst (sort-by val > (apply merge (map (fn [[key value]] {(keyword key) (count value)}) (group-by :Classes (:data node)))))))
         (assoc node :feature (:feature max-information-gain-splitter) :threshold ((:feature max-information-gain-splitter) max-information-gain-splitter) :left (split-node (first children) (dec max-depth)) :right (split-node (second children) (dec max-depth)))))))
+"
+
+(s/def ::feature (s/or :nil nil?
+                       :keyword keyword?))
+(s/def ::threshold (s/or :nil nil?
+                         :number number?))
+(s/def ::data (s/coll-of map?))
+(s/def ::left (s/or :nil nil?
+                    :map? ::node))
+(s/def ::right (s/or :nil nil?
+                     :map? ::node))
+(s/def ::node  (s/keys :req-un [::feature ::threshold ::data ::left ::right]))
+
+(defn- count-number-of-kinds-of-objective-variables
+  "Example:
+    (count-number-of-kinds-of-objective-variables iris :Classes)
+    ;;=> 3"
+  [data key-of-objective-variable]
+  {:pre [(s/valid? ::data data)
+         (s/valid? keyword? key-of-objective-variable)]
+   :post [(s/valid? int? %)]}
+  (->> data
+       (map key-of-objective-variable)
+       set
+       count))
+
+(defn- get-explanatory-variables-from
+  "Example:
+    (get-explanatory-variables-from iris :Classes)
+    ;;=> (:Sepal.Length :Sepal.Width :Petal.Length :Petal.Width)"
+  [data key-of-objective-variable]
+  {:pre [(s/valid? ::data data)
+         (s/valid? keyword? key-of-objective-variable)]
+   :post [s/valid? (s/coll-of keyword?) %]}
+  (->> (first data)
+       keys
+       (filter (partial not= key-of-objective-variable))))
+
+
+(defn- get-threshold-point-candidates
+  "Get candidates of threshold to split node to right node and left node.
+
+  Now implementation of this function is that the function takes data
+  then returns coll of map of explanatory-variable and the value.
+  Example:
+    (take 3 iris)
+    ;;=>({:Sepal.Length 5.1, :Sepal.Width 3.5, :Petal.Length 1.4, :Petal.Width 0.2, :Classes \"setosa\"}
+         {:Sepal.Length 4.9, :Sepal.Width 3.0, :Petal.Length 1.4, :Petal.Width 0.2, :Classes \"setosa\"}
+         {:Sepal.Length 4.7, :Sepal.Width 3.2, :Petal.Length 1.3, :Petal.Width 0.2, :Classes \"setosa\"})
+    (get-threshold-point-candidates (take 3 iris))
+    ;;=> ({:Sepal.Length 5.1}
+          {:Sepal.Length 4.9}
+          {:Sepal.Length 4.7}
+          {:Sepal.Width 3.5}
+          {:Sepal.Width 3.0}
+          {:Sepal.Width 3.2}
+          {:Petal.Length 1.4}
+          {:Petal.Length 1.4}
+          {:Petal.Length 1.3}
+          {:Petal.Width 0.2}
+          {:Petal.Width 0.2}
+          {:Petal.Width 0.2})"
+  [data]
+  {:pre [(s/valid? ::data data)]
+   :post [(s/valid? (s/coll-of map?) %)]}
+  (let [features (get-explanatory-variables-from data :Classes)
+        get-threshold-point-candidates-one-feature (fn [data feature] (map #(select-keys %1 [feature]) data))]
+    (->> (map (partial get-threshold-point-candidates-one-feature data) features)
+         flatten)))
+
+(defn- create-node-from-data
+  [data]
+  {:pre [(s/valid? ::data data)]
+   :post [s/valid? ::node %]}
+  {:feature nil :threshold nil :data data :right nil :left nil})
+
+(defn- split-node
+  "まえのsplit的な奴"
+  [node threshold key]
+  {:pre [(s/valid? ::node node)
+         (s/valid? ::threshold threshold)
+         (s/valid? ::feature key)]
+   :post [(s/valid? ::node %)]}
+  (let [left-data (filter #(> (key %1) threshold) (:data node))
+        left-node (create-node-from-data left-data)
+        right-data (filter #(<= (key %1) threshold) (:data node))
+        right-node (create-node-from-data right-data)]
+    (-> node
+        (update-value :feature key)
+        (update-value :threshold threshold)
+        (update-value :left left-node)
+        (update-value :right right-node))))
+
+(defn- calculate-information-gains
+  ""
+  [node]
+  (->> (get-threshold-point-candidates (:data node))
+       (map #(split-node node ((comp first vals) %1) ((comp first keys) %1)))
+       (map #(information-gain (:data node) (:data (:left %)) (:data (:right %))))))
+
+(calculate-information-gains (create-node-from-data iris))
+
+(defn split-node2
+  [node max-depth]
+  {:pre [(s/valid? ::node node)
+         (s/valid? int? max-depth)]
+   :post [(s/valid? ::node %)]})
 
 (defn predict
   "`data`は一個のデータだよ！"
