@@ -30,20 +30,13 @@
    :post [(s/valid? map? %)]}
   (update map key (fn [_] (identity updated-value))))
 
-(def iris  (->> (incanter.datasets/get-dataset :iris)
-                :rows
-                (map (partial update-key :Species :Classes))))
-
-
-(def test-data (random-sample 0.3 iris))
-(def train-data (filter #(not (.contains test-data %1)) iris))
-(def root {:feature nil :threshold nil :data train-data :right nil :left nil}) ; thresholdは以上ならleftに以下ならrightに進む．
 
 (s/def ::objective-variable string?)
 (s/def ::objective-variable-vector (s/coll-of ::objective-variable))
 
 (defn- gini-impurity
-  "`y` is objective variable vector."
+  "Calculate gini-impurity.
+  `y` is objective variable vector."
   [y]
   {:pre [(s/valid? ::objective-variable-vector y)]
    :post [(s/valid? (s/and number? #(<= 0 % 1)) %)]}
@@ -56,20 +49,7 @@
          (apply +)
          (- 1))))
 
-
-(defmacro debug
-  "Prints args. This is useful when debugging."
-  [& args]
-  (let [sym (gensym "sym") val (gensym "val")]
-    `(do(ns decision-tree.core
-          (:require [incanter.datasets]))
-
-
-        (def iris (:rows (incanter.datasets/get-dataset :iris)))
-
-        (println "debug information:\n")
-       ~@(map (fn [sym val] `(println ~sym " : " ~val)) (map str args) args)
-       (println))))
+(gini-impurity (map :Classes iris))
 
 (defn information-gain [node-data leaf1-data leaf2-data]
   (let [node-number-of-data (count node-data)
@@ -82,26 +62,6 @@
        (+ (* (/ leaf1-number-of-data node-number-of-data) leaf1-gini-impurity)
           (* (/ leaf2-number-of-data node-number-of-data) leaf2-gini-impurity)))))
 
-"
-(defn split-node [node max-depth]
-  (if (or (= max-depth 0)
-          (= (count (set (map :Classes (:data node)))) 1))
-    (assoc node :predict (ffirst (sort-by val > (apply merge (map (fn [[key value]] {(keyword key) (count value)}) (group-by :Classes (:data node)))))))
-    (let [features (filter #(not (= %1 :Classes)) (keys (first (:data node))))
-          length-of-data (count (:data node))
-          calculate-threshold-points-one-feature (fn [feature data] (let [d (sort (map feature data))
-                                                                          l (unchecked-divide-int length-of-data 2)]
-                                                                      ;(map #(hash-map feature (/ (+ %1 %2) 2)) (take l d) (take l (reverse d)))
-                                                                      (map #(hash-map feature %) d)))
-          threshold-points (flatten (map #(calculate-threshold-points-one-feature %1 (:data node)) features))
-          split (fn [key, threshold] (list (filter #(> (key %1) threshold) (:data node)) (filter #(<= (key %1) threshold) (:data node))))
-          information-gains (map #(apply (fn [l r] (information-gain (:data node) l r)) %1) (map #(split (first (keys %1)) ((first (keys %1)) %1)) threshold-points))
-          max-information-gain-splitter (rand-nth (flatten (take 1 (partition-by :information-gain (reverse (sort-by :information-gain (map #(merge %1 {:information-gain %2} {:feature (first (keys %1))}) threshold-points information-gains)))))))
-          children (map #(hash-map :data %1) (split (:feature max-information-gain-splitter) ((:feature max-information-gain-splitter) max-information-gain-splitter)))]
-      (if (= (:information-gain max-information-gain-splitter) 0.0) ;全部の特徴量が等しくなって分けれない時があるので，それの対応．上で全部の特徴量がイコールというのでバリデーションしても良いかも
-        (assoc node :predict (ffirst (sort-by val > (apply merge (map (fn [[key value]] {(keyword key) (count value)}) (group-by :Classes (:data node)))))))
-        (assoc node :feature (:feature max-information-gain-splitter) :threshold ((:feature max-information-gain-splitter) max-information-gain-splitter) :left (split-node (first children) (dec max-depth)) :right (split-node (second children) (dec max-depth)))))))
-"
 
 (s/def ::feature (s/or :nil nil?
                        :keyword keyword?))
@@ -177,8 +137,7 @@
    :post [s/valid? ::node %]}
   {:feature nil :threshold nil :data data :right nil :left nil})
 
-(defn- split-node
-  "まえのsplit的な奴"
+(defn- split-one-node
   [node threshold key]
   {:pre [(s/valid? ::node node)
          (s/valid? ::threshold threshold)
@@ -195,19 +154,84 @@
         (update-value :right right-node))))
 
 (defn- calculate-information-gains
-  ""
+  "Calculate information-gain as all split pattern.
+  Example:
+    (take 3 (calculate-information-gains (create-node-from-data iris)))
+    ;;=> ({:information-gain 0.1684194823599613, :threshold 5.1, :feature :Sepal.Length}
+          {:information-gain 0.08546401515151525, :threshold 4.9, :feature :Sepal.Length}
+          {:information-gain 0.052757793764988015, :threshold 4.7, :feature :Sepal.Length})"
   [node]
+  {:pre  [(s/valid? ::node node)]
+   :post [(s/valid? (s/coll-of map?) %)]}
   (->> (get-threshold-point-candidates (:data node))
-       (map #(split-node node ((comp first vals) %1) ((comp first keys) %1)))
-       (map #(information-gain (:data node) (:data (:left %)) (:data (:right %))))))
+       (map #(split-one-node node ((comp first vals) %1) ((comp first keys) %1)))
+       (map #(hash-map
+               :information-gain (information-gain (:data %) (:data (:left %)) (:data (:right %)))
+               :threshold (:threshold %)
+               :feature (:feature %)))))
 
-(calculate-information-gains (create-node-from-data iris))
 
-(defn split-node2
+
+(defn- stop-split?
+  "Judge whether recursion is stop ot not. recursion is stop when
+  max-depth is 0 or
+  number of kinds of objective-variables is 1 or 0.
+  number of kinds of objective-variables is 0 means that data is empty"
   [node max-depth]
+  (or (= max-depth 0)
+      (<= (count (:data node)) 1)
+      (<= (count-number-of-kinds-of-objective-variables (:data node) :Classes) 1)))
+
+(defn- get-maximum-information-gain-splitter
+  "Example:
+    (get-maximum-information-gain-splitter (create-node-from-data iris))
+    ;;=> {:information-gain 0.33333333333333337, :threshold 0.6, :feature :Petal.Width)"
+  [node]
+  (->> (calculate-information-gains node)
+       ;; max-key returns a last element if there are exact same values.
+       ;; So we added shuffle because we want this function returns a random element in exact same values.
+       shuffle
+       (apply max-key :information-gain)))
+
+(defn- get-most-popular-objective-variable-values
+  [data]
+  (->> data
+       (map :Classes)
+       (frequencies)
+       (apply max-key val)
+       key))
+
+(defn- split-node
+  "まえのsplit的な奴"
+  [node threshold key max-depth]
   {:pre [(s/valid? ::node node)
-         (s/valid? int? max-depth)]
-   :post [(s/valid? ::node %)]})
+         (s/valid? ::threshold threshold)
+         (s/valid? ::feature key)]
+   :post [(s/valid? ::node %)]}
+  (if (stop-split? node max-depth)
+    (assoc node :predict (get-most-popular-objective-variable-values (:data node)))
+    (let [_ (println "node: " node)
+          left-data (filter #(> (key %1) threshold) (:data node))
+          left-node (create-node-from-data left-data)
+          _ (println "left: " left-node)
+          left-splitter (get-maximum-information-gain-splitter left-node)
+          right-data (filter #(<= (key %1) threshold) (:data node))
+          right-node (create-node-from-data right-data)
+          _ (println "right: " right-node)
+          right-splitter (get-maximum-information-gain-splitter left-node)]
+      (-> node
+          (update-value :feature key)
+          (update-value :threshold threshold)
+          (update-value :left (split-node left-node (:threshold left-splitter) (:feature left-splitter) (dec max-depth)))
+          (update-value :right (split-node right-node (:threshold right-splitter) (:feature right-splitter) (dec max-depth)))))))
+
+(defn make-decision-tree
+  [train-data]
+  {:pre [(s/valid? ::data train-data)]
+   :post [(s/valid? ::node %)]}
+  (let [node (create-node-from-data train-data)
+        splitter (get-maximum-information-gain-splitter node)]
+    (split-node node (:threshold splitter) (:feature splitter) 5)))
 
 (defn predict
   "`data`は一個のデータだよ！"
@@ -218,11 +242,26 @@
         :else (predict (:right tree) data)))
 
 
-(defn make-decision-tree [train-data]
-  (let [root {:feature nil :threshold nil :data train-data :right nil :left nil}
-        max-depth 3]
-    (split-node root max-depth)))
-(def decision-tree (make-decision-tree train-data))
-(def correct-percent (map #(= %1 %2) (map #(predict decision-tree %1) test-data) (map keyword (map :Classes test-data))))
+(def iris  (->> (incanter.datasets/get-dataset :iris)
+                :rows
+                (map (partial update-key :Species :Classes))))
 
-(println correct-percent)
+
+(def test-data (random-sample 0.3 iris))
+(def train-data (filter #(not (.contains test-data %1)) iris))
+
+(def decision-tree (make-decision-tree train-data))
+(def results
+  (map #(= %1 %2)
+       (->> test-data
+            (map (partial predict decision-tree)))
+       (->> test-data
+            (map :Classes))))
+
+"ToDo: split-nodeに下記Nodeみたいなのをいれるとrightがからになって、からをget-max-splitterに渡して留まる。調査する。
+node:  {:feature nil, :threshold nil, :data ({:Sepal.Length 5.9, :Sepal.Width 3.2, :Petal.Length 4.8, :Petal.Width 1.8, :Classes versicolor} {:Sepal.Length 6.3, :Sepal.Width 2.7, :Petal.Length 4.9, :Petal.Width 1.8, :Classes virginica} {:Sepal.Length 6.2, :Sepal.Width 2.8, :Petal.Length 4.8, :Petal.Width 1.8, :Classes virginica} {:Sepal.Length 6.1, :Sepal.Width 3.0, :Petal.Length 4.9, :Petal.Width 1.8, :Classes virginica} {:Sepal.Length 6.0, :Sepal.Width 3.0, :Petal.Length 4.8, :Petal.Width 1.8, :Classes virginica}), :right nil, :left nil}
+left:  {:feature nil, :threshold nil, :data ({:Sepal.Length 5.9, :Sepal.Width 3.2, :Petal.Length 4.8, :Petal.Width 1.8, :Classes versicolor} {:Sepal.Length 6.3, :Sepal.Width 2.7, :Petal.Length 4.9, :Petal.Width 1.8, :Classes virginica} {:Sepal.Length 6.2, :Sepal.Width 2.8, :Petal.Length 4.8, :Petal.Width 1.8, :Classes virginica} {:Sepal.Length 6.1, :Sepal.Width 3.0, :Petal.Length 4.9, :Petal.Width 1.8, :Classes virginica} {:Sepal.Length 6.0, :Sepal.Width 3.0, :Petal.Length 4.8, :Petal.Width 1.8, :Classes virginica}), :right nil, :left nil}
+right:  {:feature nil, :threshold nil, :data (), :right nil, :left nil}\n
+"
+
+(println (frequencies results))
