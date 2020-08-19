@@ -210,15 +210,12 @@
    :post [(s/valid? ::node %)]}
   (if (stop-split? node max-depth)
     (assoc node :predict (get-most-popular-objective-variable-values (:data node)))
-    (let [_ (println "node: " node)
-          left-data (filter #(> (key %1) threshold) (:data node))
+    (let [left-data (filter #(> (key %1) threshold) (:data node))
           left-node (create-node-from-data left-data)
-          _ (println "left: " left-node)
           left-splitter (get-maximum-information-gain-splitter left-node)
           right-data (filter #(<= (key %1) threshold) (:data node))
           right-node (create-node-from-data right-data)
-          _ (println "right: " right-node)
-          right-splitter (get-maximum-information-gain-splitter left-node)]
+          right-splitter (get-maximum-information-gain-splitter right-node)]
       (-> node
           (update-value :feature key)
           (update-value :threshold threshold)
@@ -258,10 +255,5 @@
        (->> test-data
             (map :Classes))))
 
-"ToDo: split-nodeに下記Nodeみたいなのをいれるとrightがからになって、からをget-max-splitterに渡して留まる。調査する。
-node:  {:feature nil, :threshold nil, :data ({:Sepal.Length 5.9, :Sepal.Width 3.2, :Petal.Length 4.8, :Petal.Width 1.8, :Classes versicolor} {:Sepal.Length 6.3, :Sepal.Width 2.7, :Petal.Length 4.9, :Petal.Width 1.8, :Classes virginica} {:Sepal.Length 6.2, :Sepal.Width 2.8, :Petal.Length 4.8, :Petal.Width 1.8, :Classes virginica} {:Sepal.Length 6.1, :Sepal.Width 3.0, :Petal.Length 4.9, :Petal.Width 1.8, :Classes virginica} {:Sepal.Length 6.0, :Sepal.Width 3.0, :Petal.Length 4.8, :Petal.Width 1.8, :Classes virginica}), :right nil, :left nil}
-left:  {:feature nil, :threshold nil, :data ({:Sepal.Length 5.9, :Sepal.Width 3.2, :Petal.Length 4.8, :Petal.Width 1.8, :Classes versicolor} {:Sepal.Length 6.3, :Sepal.Width 2.7, :Petal.Length 4.9, :Petal.Width 1.8, :Classes virginica} {:Sepal.Length 6.2, :Sepal.Width 2.8, :Petal.Length 4.8, :Petal.Width 1.8, :Classes virginica} {:Sepal.Length 6.1, :Sepal.Width 3.0, :Petal.Length 4.9, :Petal.Width 1.8, :Classes virginica} {:Sepal.Length 6.0, :Sepal.Width 3.0, :Petal.Length 4.8, :Petal.Width 1.8, :Classes virginica}), :right nil, :left nil}
-right:  {:feature nil, :threshold nil, :data (), :right nil, :left nil}\n
-"
 
 (println (frequencies results))
