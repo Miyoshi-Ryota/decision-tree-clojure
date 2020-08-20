@@ -12,13 +12,13 @@ The library's decision-tree targets classification problem.
 
 * Add :require in your clj file to import the library.
 ```
-(:require [mrcsce/decision-tree.core :as dt])
+(:require [decision-tree.core :as dt])
 ```
 
 * Sample code (Note: If you want to run this sample code, you also add `[incanter "1.5.5"]` in your dependencies.)
 ```clojure
 (ns your-project.core
-  (:require [mrcsce/decision-tree.core :as dt])
+  (:require [decision-tree.core :as dt])
   (:require [incanter.datasets]))
 
 ;; To indicate sample code, we use iris dataset.
