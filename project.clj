@@ -1,8 +1,11 @@
-(defproject mrcsce/decision-tree "0.1.0-SNAPSHOT"
-  :description "FIXME: write description"
-  :url "http://example.com/FIXME"
-  :license {:name "EPL-2.0 OR GPL-2.0-or-later WITH Classpath-exception-2.0"
-            :url "https://www.eclipse.org/legal/epl-2.0/"}
-  :dependencies [[org.clojure/clojure "1.10.1"]
-                 [incanter "1.5.5"]]
+(defproject mrcsce/decision-tree "0.1.0"
+  :description "Clojure's implementation of decision-tree.
+   see also https://github.com/Miyoshi-Ryota/decision-tree-clojure"
+  :url "https://github.com/Miyoshi-Ryota/decision-tree-clojure"
+  :license {:name "MIT License"
+            :url "https://opensource.org/licenses/mit-license.php"}
+  :dependencies [[org.clojure/clojure "1.10.1"]]
+  :repositories [["clojars" {:url "https://clojars.org/repo" :sign-releases false}]]
+  :deploy-repositories [["releases" :clojars]
+                        ["snapshots" :clojars]]
   :repl-options {:init-ns decision-tree.core})

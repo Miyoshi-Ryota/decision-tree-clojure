@@ -1,5 +1,4 @@
 (ns decision-tree.core
-  (:require [incanter.datasets])
   (:require [clojure.spec.alpha :as s]))
 
 
@@ -48,8 +47,6 @@
          (map #(Math/pow % 2))
          (apply +)
          (- 1))))
-
-(gini-impurity (map :Classes iris))
 
 (defn information-gain [node-data leaf1-data leaf2-data]
   (let [node-number-of-data (count node-data)
@@ -202,7 +199,7 @@
        key))
 
 (defn- split-node
-  "まえのsplit的な奴"
+  "Split node to make decision-tree."
   [node threshold key max-depth]
   {:pre [(s/valid? ::node node)
          (s/valid? ::threshold threshold)
@@ -210,11 +207,10 @@
    :post [(s/valid? ::node %)]}
   (if (stop-split? node max-depth)
     (assoc node :predict (get-most-popular-objective-variable-values (:data node)))
-    (let [left-data (filter #(> (key %1) threshold) (:data node))
-          left-node (create-node-from-data left-data)
+    (let [split (split-one-node node threshold key)
+          left-node (:left split)
+          right-node (:right split)
           left-splitter (get-maximum-information-gain-splitter left-node)
-          right-data (filter #(<= (key %1) threshold) (:data node))
-          right-node (create-node-from-data right-data)
           right-splitter (get-maximum-information-gain-splitter right-node)]
       (-> node
           (update-value :feature key)
@@ -223,37 +219,33 @@
           (update-value :right (split-node right-node (:threshold right-splitter) (:feature right-splitter) (dec max-depth)))))))
 
 (defn make-decision-tree
-  [train-data]
+  "Make decision-tree.
+  `train-data` is coll of map.
+  `max-depth` is max-depth of decision-tree made
+  `key-of-objective-variable` is key-of-objective-variable for example if use iris dataset this is :Species
+  Example of `make-decision-tree` used iris dataset :
+    (take 3 iris)
+    ;; =>({:Sepal.Length 5.1, :Sepal.Width 3.5, :Petal.Length 1.4, :Petal.Width 0.2, :Species \"setosa\"}
+          {:Sepal.Length 4.9, :Sepal.Width 3.0, :Petal.Length 1.4, :Petal.Width 0.2, :Species \"setosa\"}
+          {:Sepal.Length 4.7, :Sepal.Width 3.2, :Petal.Length 1.3, :Petal.Width 0.2, :Species \"setosa\"}
+    (def decision-tree (make-decision-tree iris 3 :Species)
+  "
+  [train-data max-depth key-of-objective-variable]
   {:pre [(s/valid? ::data train-data)]
    :post [(s/valid? ::node %)]}
-  (let [node (create-node-from-data train-data)
+  (let [train-data (map (partial update-key key-of-objective-variable :Classes) train-data)
+        node (create-node-from-data train-data)
         splitter (get-maximum-information-gain-splitter node)]
-    (split-node node (:threshold splitter) (:feature splitter) 5)))
+    (split-node node (:threshold splitter) (:feature splitter) max-depth)))
 
 (defn predict
-  "`data`は一個のデータだよ！"
+  "Predict objective-variable used by decision-tree
+  `tree` is decision-tree made by `make-decision-tree` function.
+  `data` is just one data like a
+  Example of `data`:
+    {:Sepal.Length 6.2, :Sepal.Width 3.4, :Petal.Length 5.4, :Petal.Width 2.3, :Species \"virginica\"}"
   [tree data]
   (cond (not (nil? (:predict tree)))
         (:predict tree)
         (> ((:feature tree) data) (:threshold tree)) (predict (:left tree) data)
         :else (predict (:right tree) data)))
-
-
-(def iris  (->> (incanter.datasets/get-dataset :iris)
-                :rows
-                (map (partial update-key :Species :Classes))))
-
-
-(def test-data (random-sample 0.3 iris))
-(def train-data (filter #(not (.contains test-data %1)) iris))
-
-(def decision-tree (make-decision-tree train-data))
-(def results
-  (map #(= %1 %2)
-       (->> test-data
-            (map (partial predict decision-tree)))
-       (->> test-data
-            (map :Classes))))
-
-
-(println (frequencies results))
